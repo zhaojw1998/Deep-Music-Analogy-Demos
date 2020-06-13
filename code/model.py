@@ -50,32 +50,32 @@ class VAE(nn.Module):
         if torch.cuda.is_available():
             arange = arange.cuda()
         x[arange, idx] = 1
-        return x
+        return x    #a batched one-hot vector
 
     def encoder(self, x, condition):
         # self.gru_0.flatten_parameters()
         x = torch.cat((x, condition), -1)
-        x = self.gru_0(x)[-1]
-        x = x.transpose_(0, 1).contiguous()
-        x = x.view(x.size(0), -1)
-        mu = self.linear_mu(x)
-        var = self.linear_var(x).exp_()
-        distribution_1 = Normal(mu[:, :self.z1_dims], var[:, :self.z1_dims])
-        distribution_2 = Normal(mu[:, self.z1_dims:], var[:, self.z1_dims:])
+        x = self.gru_0(x)[-1]   #(numLayer*numDirection)* batch* hidden_size
+        x = x.transpose_(0, 1).contiguous()  #batch* (numLayer*numDirection)* hidden_size
+        x = x.view(x.size(0), -1)   #batch* (numLayer*numDirection*hidden_size), where numLayer=1, numDirection=2
+        mu = self.linear_mu(x)  #batch* (z1_dims + z2_dims)
+        var = self.linear_var(x).exp_() #batch* (z1_dims + z2_dims)
+        distribution_1 = Normal(mu[:, :self.z1_dims], var[:, :self.z1_dims])    #distribution for pitch
+        distribution_2 = Normal(mu[:, self.z1_dims:], var[:, self.z1_dims:])    #distribution for rhythm
         return distribution_1, distribution_2
 
     def rhythm_decoder(self, z):
-        out = torch.zeros((z.size(0), self.rhythm_dims))
+        out = torch.zeros((z.size(0), self.rhythm_dims))    #batch* rhythm_dims
         out[:, -1] = 1.
         x = []
-        t = torch.tanh(self.linear_init_0(z))
+        t = torch.tanh(self.linear_init_0(z))   #batch* hidden_dims
         hx = t
         if torch.cuda.is_available():
             out = out.cuda()
         for i in range(self.n_step):
-            out = torch.cat([out, z], 1)
-            hx = self.grucell_0(out, hx)
-            out = F.log_softmax(self.linear_out_0(hx), 1)
+            out = torch.cat([out, z], 1)    #batch* (rhythm_dims+z2_dims)
+            hx = self.grucell_0(out, hx)    #batch* hidden_dims
+            out = F.log_softmax(self.linear_out_0(hx), 1)   #batch* rhythm_dims
             x.append(out)
             if self.training:
                 p = torch.rand(1).item()
@@ -85,23 +85,23 @@ class VAE(nn.Module):
                     out = self._sampling(out)
             else:
                 out = self._sampling(out)
-        return torch.stack(x, 1)
+        return torch.stack(x, 1)    #batch* n_step* rhythm_dims
 
     def final_decoder(self, z, rhythm, condition):
-        out = torch.zeros((z.size(0), self.roll_dims))
+        out = torch.zeros((z.size(0), self.roll_dims))  #batch* roll_dims
         out[:, -1] = 1.
         x, hx = [], [None, None]
-        t = torch.tanh(self.linear_init_1(z))
+        t = torch.tanh(self.linear_init_1(z))   #batch* hidden_dims
         hx[0] = t
         if torch.cuda.is_available():
             out = out.cuda()
         for i in range(self.n_step):
-            out = torch.cat([out, rhythm[:, i, :], z, condition[:, i, :]], 1)
-            hx[0] = self.grucell_1(out, hx[0])
+            out = torch.cat([out, rhythm[:, i, :], z, condition[:, i, :]], 1)   #batch* roll_dims+rhythm_dims+z1_dims+condition_dims
+            hx[0] = self.grucell_1(out, hx[0])  #batch* hidden_dims
             if i == 0:
                 hx[1] = hx[0]
-            hx[1] = self.grucell_2(hx[0], hx[1])
-            out = F.log_softmax(self.linear_out_1(hx[1]), 1)
+            hx[1] = self.grucell_2(hx[0], hx[1])    #batch* hidden_dims
+            out = F.log_softmax(self.linear_out_1(hx[1]), 1)    #batch* roll_dims
             x.append(out)
             if self.training:
                 p = torch.rand(1).item()
@@ -109,11 +109,10 @@ class VAE(nn.Module):
                     out = self.sample[:, i, :]
                 else:
                     out = self._sampling(out)
-                self.eps = self.k / \
-                    (self.k + torch.exp(self.iteration / self.k))
+                self.eps = self.k / (self.k + torch.exp(self.iteration / self.k))
             else:
                 out = self._sampling(out)
-        return torch.stack(x, 1)
+        return torch.stack(x, 1)    #batch* n_step* roll_dims
 
     def decoder(self, z1, z2, condition=None):
         rhythm = self.rhythm_decoder(z2)
@@ -122,9 +121,8 @@ class VAE(nn.Module):
     def forward(self, x, condition):
         if self.training:
             self.sample = x
-            self.rhythm_sample = x[:, :, :-2].sum(-1).unsqueeze(-1)
-            self.rhythm_sample = torch.cat((self.rhythm_sample, x[:, :, -2:]),
-                                           -1)
+            self.rhythm_sample = x[:, :, :-2].sum(-1).unsqueeze(-1) #batch* n_step* 1
+            self.rhythm_sample = torch.cat((self.rhythm_sample, x[:, :, -2:]), -1)  #batch* n_step* 3
             self.iteration += 1
         dis1, dis2 = self.encoder(x, condition)
         z1 = dis1.rsample()

@@ -50,8 +50,6 @@ dl = MusicArrayLoader(args['data_path'], args['time_step'], 16)
 dl.chunking()
 
 # end of initialization
-
-
 def std_normal(shape):
     N = Normal(torch.zeros(shape), torch.ones(shape))
     if torch.cuda.is_available():
@@ -85,11 +83,11 @@ def loss_function(recon,
 
 def train(step):
     batch, c = dl.get_batch(args['batch_size'])
-    print(batch.shape, c.shape)
+    print(batch.shape, c.shape) # batch: batch* n_step* roll_dims; c: batch* n_step* condition_dims
     encode_tensor = torch.from_numpy(batch).float()
     c = torch.from_numpy(c).float()
-    rhythm_target = np.expand_dims(batch[:, :, :-2].sum(-1), -1)
-    rhythm_target = np.concatenate((rhythm_target, batch[:, :, -2:]), -1)
+    rhythm_target = np.expand_dims(batch[:, :, :-2].sum(-1), -1)    #batch* n_step* 1
+    rhythm_target = np.concatenate((rhythm_target, batch[:, :, -2:]), -1)   #batch* n_step* 3
     rhythm_target = torch.from_numpy(rhythm_target).float()
     rhythm_target = rhythm_target.view(-1, rhythm_target.size(-1)).max(-1)[1]
     target_tensor = encode_tensor.view(-1, encode_tensor.size(-1)).max(-1)[1]
