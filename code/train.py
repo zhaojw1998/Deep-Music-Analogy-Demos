@@ -77,9 +77,9 @@ def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args
     losses = AverageMeter()
     end = time.time()
 
+    model.train()
     for step, (batch, c) in enumerate(train_dataloader):
         data_time.update(time.time() - end)
-        #print(batch.shape, c.shape) # batch: batch* n_step* roll_dims; c: batch* n_step* condition_dims
         encode_tensor = batch.float()
         c = c.float()
         rhythm_target = np.expand_dims(batch[:, :, :-2].sum(-1), -1)    #batch* n_step* 1
@@ -97,20 +97,17 @@ def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args
         recon, recon_rhythm, dis1m, dis1s, dis2m, dis2s = model(encode_tensor, c)
         distribution_1 = Normal(dis1m, dis1s)
         distribution_2 = Normal(dis2m, dis2s)
-        loss = loss_function(
-            recon,
-            recon_rhythm,
-            target_tensor,
-            rhythm_target,
-            distribution_1,
-            distribution_2,
-            beta=args['beta'])
+        loss = loss_function(recon, recon_rhythm, target_tensor, rhythm_target, distribution_1, distribution_2, beta=args['beta'])
         loss.backward()
         losses.update(loss.item())
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         optimizer.step()
         batch_time.update(time.time() - end)
         end = time.time()
+
+        if (step + 1) % 200 == 0:
+            if args['decay'] > 0:
+                scheduler.step()
 
         if (step + 1) % args['display'] == 0:
             print('-------------------------------------------------------')
@@ -124,7 +121,54 @@ def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args
             print(print_string)
             print_string = 'loss: {loss:.5f}'.format(loss=losses.avg)
             print(print_string)
-        writer.add_scalar('batch_loss', losses.avg, epoch)
+        writer.add_scalar('train/loss-epoch', losses.avg, epoch)
+
+
+def validation(model, val_dataloader, epoch, loss_function, writer, args):
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    end = time.time()
+
+    model.eval()
+    with torch.no_grad():
+        for step, (batch, c) in enumerate(val_dataloader):
+            data_time.update(time.time() - end)
+            encode_tensor = batch.float()
+            c = c.float()
+            rhythm_target = np.expand_dims(batch[:, :, :-2].sum(-1), -1)    #batch* n_step* 1
+            rhythm_target = np.concatenate((rhythm_target, batch[:, :, -2:]), -1)   #batch* n_step* 3
+            rhythm_target = torch.from_numpy(rhythm_target).float()
+            rhythm_target = rhythm_target.view(-1, rhythm_target.size(-1)).max(-1)[1]
+            target_tensor = encode_tensor.view(-1, encode_tensor.size(-1)).max(-1)[1]
+            if torch.cuda.is_available():
+                encode_tensor = encode_tensor.cuda()
+                target_tensor = target_tensor.cuda()
+                rhythm_target = rhythm_target.cuda()
+                c = c.cuda()
+
+            recon, recon_rhythm, dis1m, dis1s, dis2m, dis2s = model(encode_tensor, c)
+            distribution_1 = Normal(dis1m, dis1s)
+            distribution_2 = Normal(dis2m, dis2s)
+            loss = loss_function(recon, recon_rhythm, target_tensor, rhythm_target, distribution_1, distribution_2, beta=args['beta'])
+            losses.update(loss.item())
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if (step + 1) % args['display'] == 0:
+                print('----validation----')
+                print_string = 'Epoch: [{0}][{1}/{2}]'.format(epoch, step + 1, len(val_dataloader))
+                print(print_string)
+                print_string = 'data_time: {data_time:.3f}, batch time: {batch_time:.3f}'.format(
+                    data_time=data_time.val,
+                    batch_time=batch_time.val)
+                print(print_string)
+                print_string = 'loss: {loss:.5f}'.format(loss=losses.avg)
+                print(print_string)
+
+    writer.add_scalar('val/loss-epoch', losses.avg, epoch)
+    return losses.avg
+
 
 def main():
     # some initialization
@@ -151,19 +195,21 @@ def main():
         model.cuda()
     else:
         print('CPU mode')
-    dl = DataLoader(MusicArrayLoader(args['data_path']),
-                                    batch_size=args['batch_size']*gpu_num,
-                                    shuffle=True,
-                                    num_workers=args['num_workers'],
-                                    drop_last=True)
+    train_dataloader = DataLoader(MusicArrayLoader(args['train_path']), batch_size = args['batch_size']*gpu_num,
+                                    shuffle = True, num_workers = args['num_workers'], drop_last = True)
+    val_dataloader = DataLoader(MusicArrayLoader(args['val_path']), batch_size = args['batch_size']*gpu_num,
+                                shuffle = False, num_workers = args['num_workers'], drop_last = False)
     # end of initialization
-    model.train()
+    
+    val_loss_record = 100
     for epoch in range(args['n_epochs']):
-        train(model, dl, epoch, loss_function, optimizer, writer, args)
-        if args['decay'] > 0:
-            scheduler.step()
-        torch.save(model.cpu().state_dict(), save_path)
-        model.cuda()
+        train(model, train_dataloader, epoch, loss_function, optimizer, writer, args)
+        #if args['decay'] > 0:
+        #    scheduler.step()
+        val_loss = validation(model, val_dataloader, epoch, loss_function, writer, args)
+        if val_loss < val_loss_record:
+            torch.save(model.cpu().state_dict(), 'params/{}.pt'.format('epoch_'+str(epoch)))
+            model.cuda()
 
 if __name__ == '__main__':
     main()

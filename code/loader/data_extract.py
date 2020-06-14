@@ -6,11 +6,12 @@ import random
 import torch
 import sklearn.utils
 
-from vae.model import VAE
+#from vae.model import VAE
 # from gen_model.model import AutoDropoutNN
-from loader.dataloader import MIDI_Loader,MIDI_Render
-from loader.chordloader import Chord_Loader
+from dataloader import MIDI_Loader,MIDI_Render
+from chordloader import Chord_Loader
 from torch.nn import functional as F
+from tqdm import tqdm
 
 pitch_num = 130
 chord_num = 12
@@ -26,22 +27,19 @@ total_len = 256 # 32.0 s
 known_len = 128 # 16.0 s
 shift_len = 32 # 4.0 s
 
-def split_dataset(directory, rate = [0.6,0.8,1.0]):
+def split_dataset(directory, rate = [0.7, 1.0]):
     path = os.listdir(directory)
     random.shuffle(path)
     nums = len(path)
     train_files = path[:int(nums * rate[0])]
     vali_files = path[int(nums * rate[0]):int(nums * rate[1])]
-    test_files = path[int(nums * rate[1]):int(nums * rate[2])]
-    for i in train_files:
-        shutil.copyfile(directory + i, "dataset/Nottingham/train/" + i)
+    for i in tqdm(train_files):
+        shutil.copyfile(directory + i, "D:/nottingham_32beat-split_npy_train-val-split/train/" + i)
         print("copy %s success!\n" %i)
-    for i in vali_files:
-        shutil.copyfile(directory + i, "dataset/Nottingham/validate/" + i)
+    for i in tqdm(vali_files):
+        shutil.copyfile(directory + i, "D:/nottingham_32beat-split_npy_train-val-split/val/" + i)
         print("copy %s success!\n" %i)
-    for i in test_files:
-        shutil.copyfile(directory + i, "dataset/Nottingham/test/" + i)
-        print("copy %s success!\n" %i)
+
 
 def alignment_data(data):
     new_data = []
@@ -168,7 +166,7 @@ def vae_make_one_hot_data(train_data):
         #         train_gd[i,j] = value
     print("convert success！",flush = True)
     return [train_x,train_cond]
-
+"""
 # train_loader = MIDI_Loader(datasetName = "Nottingham", minStep = min_step)
 # validate_loader = MIDI_Loader(datasetName = "Nottingham", minStep = min_step)
 test_loader = MIDI_Loader(datasetName = "Nottingham", minStep = min_step)
@@ -243,7 +241,6 @@ for inx,i in enumerate(te):
 # np.save("train_data_8_crop.npy",tr)
 # np.save("validate_data_8_crop.npy",va)
 np.save("test_data_no_split_8_crop.npy",te)
-
+"""
 if __name__ == '__main__':
-    data = np.load('processed_data/test_data_no_split_8_crop.npy')
-    print(data)
+    split_dataset('D:/nottingham_32beat-split_npy/')

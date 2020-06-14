@@ -1,7 +1,8 @@
 {
     "batch_size": 128,
-    "n_epochs": 25,
-    "data_path": "nottingham_32beat_split_datalist.npy",
+    "n_epochs": 10,
+    "train_path": "nottingham_32beat_train.npy",
+    "val_path": "nottingham_32beat_val.npy",
     "lr": 1e-3,
     "decay": 0.9999,
     "if_parallel": false,
