@@ -1,3 +1,5 @@
 *.mid
 *.pdf
 *.txt
+*.pt
+*.npy

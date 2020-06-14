@@ -8,11 +8,13 @@ import music21 as m21
 from chordloader import Chord_Loader
 import copy
 from tqdm import tqdm
+import sys
 
 class MIDI_Loader:
     def __init__(self, datasetName, minStep = 0.03125):
         self.datasetName = datasetName
         self.minStep = minStep
+
     def load(self, directory):
         path = os.listdir(directory)
         print("start to load mid from %s" % directory)
@@ -21,13 +23,17 @@ class MIDI_Loader:
             self.midi_files = [] 
             self.directory = directory
             for midi_file in tqdm(path):
-                self.midi_files.append({"name": (midi_file.split("."))[0], "raw": pyd.PrettyMIDI(directory + midi_file)})
+                midi_data = pyd.PrettyMIDI(directory + midi_file)
+                if not (len(midi_data.instruments)) == 2:
+                    continue
+                self.midi_files.append({"name": (midi_file.split("."))[0], "raw": midi_data})
             print("loading %s success! %d files in total" %(directory, len(self.midi_files)))
             return self.midi_files
         print("Error: No dataset called " +  self.datasetName)
         return None
-    def getChordSeq(self, recogLevel = "Mm"):
-        print("start to get chord sequences")
+
+    def getMelodyAndChordSeq(self, recogLevel = "Mm"):
+        print("start to get melody and sequences")
         self.recogLevel = recogLevel
         if self.datasetName == "Nottingham":
             # 25 one hot vectors
@@ -39,24 +45,32 @@ class MIDI_Loader:
                 cl = Chord_Loader(recogLevel = self.recogLevel)
                 chord_set = []
                 chord_time = [0.0, 0.0]
-                last_time = 0.0 # Define the chord recognition system
+                last_time = midi_data.instruments[0].notes[0].start # Define the chord recognition system
                 chord_file = []
-                if len(midi_data.instruments) == 1:
-                    self.midi_files[i]["chords"] = {}
-                    self.midi_files[i]["chord_seq"] = []
-                    continue
+                pitch_file = []
+                rest_pitch = 129
+                hold_pitch = 128
+
+                #check chord track
+                if not len(midi_data.instruments) == 2:
+                    print(i, self.midi_files[i]['name'])
+                assert(len(midi_data.instruments) == 2)
+                #initialize save list for melody and chord notes
                 self.midi_files[i]["chords"] = []
+                self.midi_files[i]["pitches"] = []
+                #for chord
                 for note in midi_data.instruments[1].notes:
                     if len(chord_set) == 0:
                         chord_set.append(note.pitch)
                         chord_time[0] = note.start
                         chord_time[1] = note.end
+                        offset = chord_time[0] - last_time
                     else:
                         if note.start == chord_time[0] and note.end == chord_time[1]:
                             chord_set.append(note.pitch)
                         else:
                             if last_time < chord_time[0]:
-                                self.midi_files[i]["chords"].append({"start":last_time ,"end": chord_time[0], "chord" : "NC"})
+                                self.midi_files[i]["chords"].append({"start":last_time,"end": chord_time[0], "chord" : "NC"})
                             self.midi_files[i]["chords"].append({"start":chord_time[0],"end":chord_time[1],"chord": cl.note2name(chord_set)})
                             last_time = chord_time[1]
                             chord_set = []
@@ -68,16 +82,47 @@ class MIDI_Loader:
                         self.midi_files[i]["chords"].append({"start":last_time ,"end": chord_time[0], "chord" : "NC"})
                     self.midi_files[i]["chords"].append({"start":chord_time[0],"end":chord_time[1],"chord": cl.note2name(chord_set)})
                     last_time = chord_time[1]
-                for c in self.midi_files[i]["chords"]:
+                #for melody and chord
+                anchor = 0
+                note = midi_data.instruments[0].notes[anchor]
+                new_note = True
+                for idx, c in enumerate(self.midi_files[i]["chords"]):
                     c_index = cl.name2index(c["chord"])
                     steps = int((c["end"] - c["start"]) / self.minStep)
+                    time_step = c["start"]
                     for j in range(steps):
                         chord_file.append(c_index)
+                        while note.end <= time_step:
+                            anchor += 1
+                            note = midi_data.instruments[0].notes[anchor]
+                            new_note = True
+                        if note.start > time_step:
+                            pitch_file.append(rest_pitch)
+                        else:
+                            if not new_note:
+                                pitch_file.append(hold_pitch)
+                            else:
+                                pitch_file.append(note.pitch)
+                                new_note = False
+                        time_step += self.minStep
+                if offset > 1e-1:
+                    #print(offset)
+                    steps = int(offset / self.minStep)
+                    for j in range(steps):
+                        chord_file.append(c_index)
+                        pitch_file.append(hold_pitch)
+                #assert alignment
+                if not (len(chord_file) == len(pitch_file)):
+                    print(i, self.midi_files[i]['name'], 'chord file', len(chord_file), 'pitch_file', len(pitch_file))
+                assert(len(chord_file) == len(pitch_file))  
+                #save             
                 self.midi_files[i]["chord_seq"] = chord_file
+                self.midi_files[i]["notes"] = pitch_file
             print("calc chords success! %d files in total" % len(self.midi_files))
             return self.midi_files
         print("Error: No dataset called " +  self.datasetName)
         return None
+
     def getNoteSeq(self):
         print("start to get notes")
         if self.datasetName == "Nottingham":
