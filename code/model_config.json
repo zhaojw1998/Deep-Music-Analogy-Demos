@@ -1,5 +1,5 @@
 {
-    "batch_size": 256,
+    "batch_size": 128,
     "n_epochs": 25,
     "data_path": "nottingham_32beat_split_datalist.npy",
     "lr": 1e-3,
