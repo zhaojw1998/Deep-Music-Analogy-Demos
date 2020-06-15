@@ -83,12 +83,19 @@ distr_B_pitch, distr_B_rhythm = model.encoder(melody_B, chord_B)
 z_A_pitch = distr_A_pitch.rsample()
 z_B_rhythm = distr_B_rhythm.rsample()
 recon_rhythm = model.rhythm_decoder(z_B_rhythm)
-condition = Melody_A[:, 130:][np.newaxis, :, :]
+#Reconstruct with chord of A
 recon = model.final_decoder(z_A_pitch, recon_rhythm, chord_A)
 recon = recon.detach().cpu()[0]
 idx = recon.max(1)[1]
 out = torch.zeros_like(recon)
 arange = torch.arange(out.size(0)).long()
 out[arange, idx] = 1
-#print(out.numpy())
-numpy_to_midi_with_condition(out.numpy(), chord_A.detach().cpu().numpy()[0], time_step = 0.125, output='test_analogy.mid')
+numpy_to_midi_with_condition(out.numpy(), chord_A.detach().cpu().numpy()[0], time_step = 0.125, output='test_analogy_with_chord_A.mid')
+#Reconstruct with chord of B
+recon = model.final_decoder(z_A_pitch, recon_rhythm, chord_B)
+recon = recon.detach().cpu()[0]
+idx = recon.max(1)[1]
+out = torch.zeros_like(recon)
+arange = torch.arange(out.size(0)).long()
+out[arange, idx] = 1
+numpy_to_midi_with_condition(out.numpy(), chord_B.detach().cpu().numpy()[0], time_step = 0.125, output='test_analogyy_with_chord_B.mid')

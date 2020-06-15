@@ -11,7 +11,8 @@ from torch.optim.lr_scheduler import ExponentialLR
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 import time
-
+from collections import OrderedDict
+import sys
 
 class MinExponentialLR(ExponentialLR):
     def __init__(self, optimizer, gamma, minimum, last_epoch=-1):
@@ -121,7 +122,7 @@ def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args
             print(print_string)
             print_string = 'loss: {loss:.5f}'.format(loss=losses.avg)
             print(print_string)
-        writer.add_scalar('train/loss-epoch', losses.avg, epoch)
+    writer.add_scalar('train/loss-epoch', losses.avg, epoch)
 
 
 def validation(model, val_dataloader, epoch, loss_function, writer, args):
@@ -182,6 +183,17 @@ def main():
     writer = SummaryWriter('log')
     model = VAE(130, args['hidden_dim'], 3, 12, args['pitch_dim'],
                 args['rhythm_dim'], args['time_step'])
+
+    #load pretrained file
+    """
+    params = torch.load('params/model_parameters.pt')
+    new_params = OrderedDict()
+    for k, v in params.items():
+        name = k[7:]
+        new_params[name] = v
+    model.load_state_dict(new_params)
+    """
+    
     if args['if_parallel']:
         model = torch.nn.DataParallel(model, device_ids=[0, 1])
         gpu_num = 2
@@ -207,9 +219,9 @@ def main():
         #if args['decay'] > 0:
         #    scheduler.step()
         val_loss = validation(model, val_dataloader, epoch, loss_function, writer, args)
-        if val_loss < val_loss_record:
-            torch.save(model.cpu().state_dict(), 'params/{}.pt'.format('epoch_'+str(epoch)))
-            model.cuda()
+        #if val_loss < val_loss_record:
+        #    torch.save(model.cpu().state_dict(), 'params/{}.pt'.format('epoch_'+str(epoch)))
+        #    model.cuda()
 
 if __name__ == '__main__':
     main()
