@@ -71,7 +71,7 @@ def loss_function(recon,
     return CE1 + CE2 + beta * (KLD1 + KLD2)
 
 
-def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args):
+def train(model, train_dataloader, epoch, loss_function, optimizer, writer, args, scheduler):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -203,7 +203,7 @@ def main():
     
     val_loss_record = 100
     for epoch in range(args['n_epochs']):
-        train(model, train_dataloader, epoch, loss_function, optimizer, writer, args)
+        train(model, train_dataloader, epoch, loss_function, optimizer, writer, args, scheduler)
         #if args['decay'] > 0:
         #    scheduler.step()
         val_loss = validation(model, val_dataloader, epoch, loss_function, writer, args)
