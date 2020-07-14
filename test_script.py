@@ -1,10 +1,8 @@
-import pretty_midi as pyd
-import music21 as m21
-import os 
+from tensorboard.backend.event_processing import event_accumulator
 
-track_statistics={}
+ea = event_accumulator.EventAccumulator(r'log/Mon Jul  6 22-51-32 2020/events.out.tfevents.1594047092.Zhao-Jingwei')
+ea.Reload()
+print(ea.scalars.Keys())
 
-midi = 'nottingham_mini/A and D.mid'
-midi_data = pyd.PrettyMIDI(midi)
-print(midi_data.instruments[0].notes[:20])
-print(midi_data.instruments[1].notes[:10])
+val_acc=ea.scalars.Items('val/loss_total-epoch')
+print(len(val_acc), val_acc[-1].value)

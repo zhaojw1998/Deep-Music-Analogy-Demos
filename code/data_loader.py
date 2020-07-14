@@ -3,9 +3,11 @@ import numpy as np
 import torch.utils.data as data
 
 class MusicArrayLoader(data.Dataset):
-    def __init__(self, data_path):
+    def __init__(self, data_path, ratio):
         self.datalist_full = np.load(data_path)
-        self.datalist = self.datalist_full[:len(self.datalist_full)]
+        np.random.shuffle(self.datalist_full)
+        self.datalist = self.datalist_full[:int(ratio*len(self.datalist_full))]
+        #print(self.datalist[:10])
 
     def __getitem__(self, index):
         file_dir = self.datalist[index]
@@ -20,3 +22,6 @@ class MusicArrayLoader(data.Dataset):
     def shuffle_data(self):
         np.random.shuffle(self.datalist_full)
         self.datalist = self.datalist_full[:len(self.datalist_full)]
+
+if __name__ == '__main__':
+    loader = MusicArrayLoader('datalist/nottingham_32beat_val.npy', 0.2)

@@ -5,7 +5,7 @@ import numpy as np
 import os
 import random
 import music21 as m21
-from chordloader import Chord_Loader
+from loader.chordloader import Chord_Loader
 import copy
 from tqdm import tqdm
 import sys
