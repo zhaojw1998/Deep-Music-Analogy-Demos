@@ -3,7 +3,7 @@ import numpy as np
 import os
 import random
 import music21 as m21
-from loader.chordloader import Chord_Loader
+from chordloader import Chord_Loader
 import copy
 from tqdm import tqdm
 import sys
@@ -16,6 +16,7 @@ class midi_processor(object):
         midiDataAugment_batch(bottom = 40, top = 85)
         writeTxtFile_batch(output = "")
         midiSaveNumpy_batch
+        midi2numpy_batch
     functions  for a single midi file:
         load_single(file_path)
         getMelodyAndChordSeq_single(self, recogLevel = "Seven")
@@ -279,7 +280,7 @@ class midi_processor(object):
                     if is_add:
                         midi_file["name"] += "-switch(" + str(i) + ")" 
                         augment_data.append(midi_file)
-                print("finish augment %d data" % i)
+                #print("finish augment %d data" % i)
             self.midi_files = augment_data
             # random.shuffle(self.midi_files)
             print("data augment success! %d files in total" % len(self.midi_files))
@@ -466,6 +467,37 @@ class midi_processor(object):
             save_name = save_root + midi_file['name'] + '.npy'
             np.save(save_name, melody_with_chord)
     
+    def midi2numpy_batch(self, window_size = 32, hop_size = 16, save_root = ''):
+        self.numpy_batch = np.empty((0, window_size, 130+12))
+        for midi_file in self.midi_files:
+            chords = midi_file["chord_seq"]
+            notes = midi_file["notes"]
+            if not len(chords) == len(notes):
+                print(midi_file['name'], len(chords), len(notes))
+            assert(len(chords) == len(notes))
+            length = len(chords)
+            note_array = np.zeros((1, length, 130))
+            for idx, note in enumerate(midi_file["notes"]):
+                note_array[0, idx, note] = 1
+            chord_array = np.zeros((1, length, 12))
+            for idx, chord in enumerate(chords):
+                cname = self.cl.index2name(chord)
+                cnotes = self.cl.name2note(cname)
+                if cnotes is None:
+                    continue
+                for k in cnotes:
+                    chord_array[0,idx,k % 12] = 1
+            melody_with_chord = np.concatenate((note_array, chord_array), axis=-1)
+            print(melody_with_chord.shape)
+            for i in range(0, melody_with_chord.shape[1]-window_size, hop_size):
+                sample = melody_with_chord[:, i: i+window_size, :]
+                self.numpy_batch = np.concatenate((self.numpy_batch, sample), axis = 0)
+        if not save_root == '':
+            if not os.path.exists(save_root):
+                os.makedirs(save_root)
+            np.save(os.path.join(save_root, 'splitted_data.npy'), self.numpy_batch)
+        return self.numpy_batch
+    
     def numpy2midiWithCondition_single(self, sample, condition, time_step = 0.125, output='sample/sample.mid'):
         music = pyd.PrettyMIDI()
         piano_program = pyd.instrument_name_to_program(
@@ -516,5 +548,11 @@ class midi_processor(object):
         music.instruments.append(chord)
         music.write(output)
 
-#if __name__ == '__main__':
-#demo reading midi to numpy:
+if __name__ == '__main__':
+    #demo reading midi to numpy:
+    converter = midi_processor('Nottingham', 0.125)
+    converter.load_batch('../dule_track_trial/')
+    converter.getMelodyAndChordSeq_batch("Seven")
+    converter.midiDataAugment_batch()
+    data = converter.midi2numpy_batch(save_root='splitted_data')
+    print(data.shape)
