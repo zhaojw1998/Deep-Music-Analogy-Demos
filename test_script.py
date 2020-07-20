@@ -1,8 +1,28 @@
-from tensorboard.backend.event_processing import event_accumulator
+import pretty_midi as pyd
+# import numpy as np
+import os
+from tqdm import tqdm
 
-ea = event_accumulator.EventAccumulator(r'log/Mon Jul  6 22-51-32 2020/events.out.tfevents.1594047092.Zhao-Jingwei')
-ea.Reload()
-print(ea.scalars.Keys())
-
-val_acc=ea.scalars.Items('val/loss_total-epoch')
-print(len(val_acc), val_acc[-1].value)
+root = 'D:/Download/Program/Musicalion/solo+piano/data'
+record = {}
+num_malfunction = 0
+for midi in tqdm(os.listdir(root)):
+    # print(midi)
+    try:
+        midi_file = pyd.PrettyMIDI(os.path.join(root, midi))
+    except ValueError:
+        num_malfunction += 1
+        continue
+    except EOFError:
+        num_malfunction += 1
+        continue
+    except IOError:
+        num_malfunction += 1
+        continue
+    
+    num_track = len(midi_file.instruments)
+    if num_track not in record:
+        record[num_track] = 0
+        # print(num_track, midi)
+    record[num_track] += 1
+print(record)
