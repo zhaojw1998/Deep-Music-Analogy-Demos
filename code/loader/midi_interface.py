@@ -6,6 +6,8 @@ import copy
 from tqdm import tqdm
 import sys
 import pickle
+from joblib import delayed
+from joblib import Parallel
 
 
 class midi_interface(object):
@@ -146,8 +148,11 @@ class midi_interface(object):
                     chord_file.append(c_index)
                     while note.end-self.minStep/2 <= time_step:
                         anchor += 1
-                        note = midi_data.instruments[0].notes[anchor]
-                        new_note = True
+                        try:
+                            note = midi_data.instruments[0].notes[anchor]
+                            new_note = True
+                        except:
+                            break
                     if note.start-self.minStep/2 > time_step:
                         pitch_file.append(rest_pitch)
                     else:
@@ -366,40 +371,51 @@ class midi_interface(object):
             save_name = os.path.join(save_root, midi_file['name'] + '.npy')
             np.save(save_name, melody_with_chord)
     
+    def midi2numpy_batch_inner(self, file_idx, window_size, hop_size):
+        midi_file = self.discretized_midi[file_idx]
+        chords = midi_file["chord_seq"]
+        notes = midi_file["notes"]
+        if not len(chords) == len(notes):
+            print(midi_file['name'], len(chords), len(notes))
+        assert(len(chords) == len(notes))
+        length = len(chords)
+        note_array = np.zeros((1, length, 130))
+        for idx, note in enumerate(midi_file["notes"]):
+            note_array[0, idx, note] = 1
+        chord_array = np.zeros((1, length, 12))
+        for idx, chord in enumerate(chords):
+            cname = self.cl.index2name(chord)
+            cnotes = self.cl.name2note(cname)
+            if cnotes is None:
+                continue
+            for k in cnotes:
+                chord_array[0,idx,k % 12] = 1
+        melody_with_chord = np.concatenate((note_array, chord_array), axis=-1)
+        #print(melody_with_chord.shape)
+        sub_numpy_batch = np.empty((0, window_size, 130+12))
+        sub_belonging = []
+        for i in range(0, melody_with_chord.shape[1]-window_size, hop_size):
+            sample = melody_with_chord[:, i: i+window_size, :]
+            sub_numpy_batch = np.concatenate((sub_numpy_batch, sample), axis = 0)
+            midiBelong = self.pitch_shift_record[file_idx][0]
+            shiftBelong = self.pitch_shift_record[file_idx][1]
+            start = i*self.minStep
+            end = (i+window_size)*self.minStep
+            sub_belonging.append((midiBelong, shiftBelong, (start, end)))
+        return (sub_numpy_batch, sub_belonging)
+    
     def midi2numpy_batch(self, window_size = 32, hop_size = 16, save_root = './'):
         if self.pitch_shift_record == []:
             self.pitch_shift_record = [(i, 0) for i in range(len(self.start_time_record))]
         numpy_batch = np.empty((0, window_size, 130+12))
+        self.belonging = []
         print('start converting midi to numpy')
-        for file_idx in tqdm(range(len(self.discretized_midi))):
-            midi_file = self.discretized_midi[file_idx]
-            chords = midi_file["chord_seq"]
-            notes = midi_file["notes"]
-            if not len(chords) == len(notes):
-                print(midi_file['name'], len(chords), len(notes))
-            assert(len(chords) == len(notes))
-            length = len(chords)
-            note_array = np.zeros((1, length, 130))
-            for idx, note in enumerate(midi_file["notes"]):
-                note_array[0, idx, note] = 1
-            chord_array = np.zeros((1, length, 12))
-            for idx, chord in enumerate(chords):
-                cname = self.cl.index2name(chord)
-                cnotes = self.cl.name2note(cname)
-                if cnotes is None:
-                    continue
-                for k in cnotes:
-                    chord_array[0,idx,k % 12] = 1
-            melody_with_chord = np.concatenate((note_array, chord_array), axis=-1)
-            #print(melody_with_chord.shape)
-            for i in range(0, melody_with_chord.shape[1]-window_size, hop_size):
-                sample = melody_with_chord[:, i: i+window_size, :]
-                numpy_batch = np.concatenate((numpy_batch, sample), axis = 0)
-                midiBelong = self.pitch_shift_record[file_idx][0]
-                shiftBelong = self.pitch_shift_record[file_idx][1]
-                start = i*self.minStep
-                end = (i+window_size)*self.minStep
-                self.belonging.append((midiBelong, shiftBelong, (start, end)))
+        result_list = Parallel(n_jobs=4)(delayed(self.midi2numpy_batch_inner)(file_idx, window_size, hop_size) for file_idx in tqdm(range(len(self.discretized_midi))))
+        for i in tqdm(range(len(result_list))):
+            numpy_batch = np.concatenate((numpy_batch, result_list[i][0]), axis=0)
+            print(numpy_batch.shape)
+            self.belonging = self.belonging + result_list[i][1]
+            print(len(self.belonging))
         if not save_root == '':
             if not os.path.exists(save_root):
                 os.makedirs(save_root)
@@ -409,6 +425,7 @@ class midi_interface(object):
         #print(self.belonging, len(self.belonging))
         print('Conversion success! %d files in total' % numpy_batch.shape[0])
         return numpy_batch
+    
     
     def numpy2midiWithCondition_single(self, sample, condition, time_step = 0.125, output='sample/sample.mid'):
         if not self.tempo == None:
@@ -511,17 +528,23 @@ if __name__ == '__main__':
     #    print(len(midi.instruments[i].notes))
     #print(midi.instruments[0].notes[0].start, midi.instruments[0].notes[-1].end)"""
     
-    
+    """
     #test scripts
     converter = midi_interface(0.125)
-    converter.load_batch('../dule_track_trial', './')
-    #converter.getMelodyAndChordSeq(recogLevel = "Seven")
+    converter.load_batch('../dule_track_trial',)
+    converter.getMelodyAndChordSeq(recogLevel = "Seven", save_root='./')
     #converter.midiDataAugment_batch()
     #converter.writeFile('testWriteFile')
     #converter.text2midi_single(os.path.join('testWriteFile', (os.listdir('testWriteFile')[0])), recogLevel = "Seven",output = "test_text2midi.mid")
     #converter.midiSaveNumpy_batch('testSaveNumpy')
-    #batch = converter.midi2numpy_batch(save_root='./')
-    batch=np.load('./splitted_data.npy')
-    converter.numpy2midiWithCondition_single(batch[10, :, :130], batch[10, :, 130:], time_step = 0.125, output='testNumpy2Midi.mid')
-    converter.recon_midi_snippets([104, 106, 108, 110])
-    
+    batch = converter.midi2numpy_batch(save_root='./')
+    #batch=np.load('./splitted_data.npy')
+    converter.numpy2midiWithCondition_single(batch[301, :, :130], batch[301, :, 130:], time_step = 0.125, output='testNumpy2Midi.mid')
+    converter.recon_midi_snippets([301])
+    """
+
+    converter = midi_interface(0.125)
+    converter.load_single('../dule_track_trial/ssccm17.mid')
+    converter.getMelodyAndChordSeq(recogLevel = "Mm", save_root='')
+    mel, chord = converter.midi2Numpy_single()
+    converter.numpy2midiWithCondition_single(mel[0], chord[0], time_step = 0.125, output='testNumpy2Midi-single.mid')

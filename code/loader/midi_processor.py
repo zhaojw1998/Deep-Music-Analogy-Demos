@@ -23,7 +23,7 @@ class midi_processor(object):
                 continue
             tempo = np.mean(midi_data.get_tempo_changes()[-1])
             if len(midi_data.instruments) == 1:
-                midi_data.write(os.path.join(dual_track_midi_root, mid))
+                #midi_data.write(os.path.join(dual_track_midi_root, mid))
                 continue    #omit mono_track samples
             melody = midi_data.instruments[0]
             new_track = pyd.Instrument(program = pyd.instrument_name_to_program('Acoustic Grand Piano'))
@@ -53,6 +53,7 @@ class midi_processor(object):
         gen_midi.instruments.append(melody)
         gen_midi.instruments.append(new_track)
         gen_midi.write(dual_track_midi_file)
+
 
 if __name__ == '__main__':
     processor = midi_processor()
