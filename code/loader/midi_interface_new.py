@@ -116,39 +116,43 @@ if __name__ == '__main__':
         def EC2_VAE_batchData(self):
             numTotal = len(self.npy_midi_set)
             print(numTotal)
-            NumMiniBatch = numTotal // 7
+            NumMiniBatch = numTotal // 10
             print('begin generating batch data for EC2-VAE')
             for part, idx_B in enumerate(range(0, numTotal-NumMiniBatch, NumMiniBatch)):
                 batchData = np.empty((0, 32, 142))
                 chord_complement = np.zeros((1, 32, 12))
-                for idx in tqdm(range(len(self.npy_midi_set[idx_B: idx_B+NumMiniBatch]))):
-                    numpyMatrix = self.npy_midi_set[idx]
+                sub_midi_set = self.npy_midi_set[idx_B: idx_B+NumMiniBatch]
+                for idx in tqdm(range(len(sub_midi_set))):
+                    numpyMatrix = sub_midi_set[idx]
                     for idxT in range(0, numpyMatrix.shape[0]-32, 16):
                         sample = np.concatenate((numpyMatrix[idxT:idxT+32, :][np.newaxis, :, :], chord_complement), axis=-1)
                         if sample[0, 0, 128] == 1:
                             for idx_forward in range(idxT,0, -1):
-                                note = self.melodySequence_set[idx][idx_forward]
+                                note = self.melodySequence_set[part*NumMiniBatch+idx][idx_forward]
                                 if note != 128:
                                     break
                             sample[0, 0, 128] = 0
                             sample[0, 0, note] = 1
                         batchData = np.concatenate((batchData, sample), axis=0)
-                        self.belonging.append((idx, idxT))
+                        self.belonging.append((part*NumMiniBatch+idx, idxT))
                 np.save('batchData_part%d.npy'%part, batchData)
                 print(batchData.shape)
-            for idx in tqdm(range(len(self.npy_midi_set[idx_B+NumMiniBatch:]))):
-                numpyMatrix = self.npy_midi_set[idx]
+            batchData = np.empty((0, 32, 142))
+            chord_complement = np.zeros((1, 32, 12))
+            sub_midi_set = self.npy_midi_set[idx_B+NumMiniBatch:]
+            for idx in tqdm(range(len(sub_midi_set))):
+                numpyMatrix = sub_midi_set[idx]
                 for idxT in range(0, numpyMatrix.shape[0]-32, 16):
                     sample = np.concatenate((numpyMatrix[idxT:idxT+32, :][np.newaxis, :, :], chord_complement), axis=-1)
                     if sample[0, 0, 128] == 1:
                         for idx_forward in range(idxT,0, -1):
-                            note = self.melodySequence_set[idx][idx_forward]
+                            note = self.melodySequence_set[(part+1)*NumMiniBatch+idx][idx_forward]
                             if note != 128:
                                 break
                         sample[0, 0, 128] = 0
                         sample[0, 0, note] = 1
                     batchData = np.concatenate((batchData, sample), axis=0)
-                    self.belonging.append((idx, idxT))
+                    self.belonging.append(((part+1)*NumMiniBatch+idx, idxT))
             np.save('batchData_part%d.npy'%(part+1), batchData)
             print(batchData.shape)
 
@@ -175,8 +179,9 @@ if __name__ == '__main__':
             melody = pyd.Instrument(program = pyd.instrument_name_to_program('Violin'))
             accompany = pyd.Instrument(program = pyd.instrument_name_to_program('Acoustic Grand Piano'))
             past = 0
+            previous = 0
             for batchIdx in batchIdxList:
-                midiIdx, idxT = self.belonging[batchIdx]
+                midiIdx, idxT = self.belonging[previous+batchIdx]
                 minStep = self.minStep_set[midiIdx]
                 start = self.start_record[midiIdx] + idxT*minStep
                 end = self.start_record[midiIdx] + (idxT+32)*minStep
@@ -194,7 +199,7 @@ if __name__ == '__main__':
             midiRetrive.instruments.append(melody)
             midiRetrive.instruments.append(accompany)
             midiRetrive.write('test_retrive.mid')
-            batchData = np.load('batchData_part2.npy')
+            batchData = np.load('batchData_part0.npy')
             melodyRecon = self.midiReconFromNumpy(batchData[batchIdx, :, :130], minStep)
             melodyRecon.write('test_recon.mid')
             return midiRetrive
