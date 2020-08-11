@@ -138,6 +138,7 @@ class accompanySelection(midi_interface_mono):
             self.melodySequence_set = []
             self.npy_midi_set = []
             self.belonging = []
+            self.num_beforeShift = None
         
         def load_dataset(self, dataset_dir):
             print('begin loading dataset')
@@ -221,41 +222,68 @@ class accompanySelection(midi_interface_mono):
             time.sleep(0.5)
             #return batchData
             
-        def loadAuxilary(self):
+        def loadAuxilary(self, file_name):
             print('begin loading parameters')
             time.sleep(.5)
             time1=time.time()
-            with open(os.path.join(self.save_root, 'auxilary.txt'), 'rb') as f:
+            with open(os.path.join(self.save_root, file_name), 'rb') as f:
                 self.raw_midi_set = pickle.load(f)
                 self.tempo_set = pickle.load(f)
                 self.minStep_set = pickle.load(f)
                 self.start_record = pickle.load(f)
                 self.belonging = pickle.load(f)
+                try:
+                    #self.num_beforeShift = pickle.load(f)
+                    self.num_beforeShift = 238444
+                    print(self.num_beforeShift)
+                except EOFError:
+                    self.num_beforeShift = None
             duration = time.time() - time1
             print('finish loading parameters, using time %.2fs'%duration)
             time.sleep(.5)
 
         def retriveRawMidi(self, batchIdx):
-            previous = 0
-            midiIdx, idxT = self.belonging[previous+batchIdx]
-            minStep = self.minStep_set[midiIdx]
-            start = idxT*minStep
-            end = (idxT+32)*minStep
-            tempo = 60 / minStep / 4
-            midi_file = self.raw_midi_set[midiIdx]
-            midiRetrive = pyd.PrettyMIDI(initial_tempo=tempo)
-            melody = pyd.Instrument(program = pyd.instrument_name_to_program('Violin'))
-            accompany = pyd.Instrument(program = pyd.instrument_name_to_program('Acoustic Grand Piano'))
-            for note in midi_file.instruments[0].notes:
-                if note.end > start and note.start < end:
-                    note_recon = pyd.Note(velocity = 100, pitch = note.pitch, start = max(note.start, start)-start, end = min(note.end, end)-start)
-                    melody.notes.append(note_recon)
-            for note in midi_file.instruments[1].notes:
-                if note.end > start and note.start < end:
-                    note_recon = pyd.Note(velocity = 100, pitch = note.pitch, start = max(note.start, start)-start, end = min(note.end, end)-start)
-                    accompany.notes.append(note_recon)
-            midiRetrive.instruments.append(melody)
-            midiRetrive.instruments.append(accompany)
+            if self.num_beforeShift == None:
+                midiIdx, idxT = self.belonging[batchIdx]
+                minStep = self.minStep_set[midiIdx]
+                start = idxT*minStep
+                end = (idxT+32)*minStep
+                tempo = 60 / minStep / 4
+                midi_file = self.raw_midi_set[midiIdx]
+                midiRetrive = pyd.PrettyMIDI(initial_tempo=tempo)
+                melody = pyd.Instrument(program = pyd.instrument_name_to_program('Violin'))
+                accompany = pyd.Instrument(program = pyd.instrument_name_to_program('Acoustic Grand Piano'))
+                for note in midi_file.instruments[0].notes:
+                    if note.end > start and note.start < end:
+                        note_recon = pyd.Note(velocity = 100, pitch = note.pitch, start = max(note.start, start)-start, end = min(note.end, end)-start)
+                        melody.notes.append(note_recon)
+                for note in midi_file.instruments[1].notes:
+                    if note.end > start and note.start < end:
+                        note_recon = pyd.Note(velocity = 100, pitch = note.pitch, start = max(note.start, start)-start, end = min(note.end, end)-start)
+                        accompany.notes.append(note_recon)
+                midiRetrive.instruments.append(melody)
+                midiRetrive.instruments.append(accompany)
+            else:
+                midiIdx, idxT = self.belonging[batchIdx % self.num_beforeShift]
+                minStep = self.minStep_set[midiIdx]
+                start = idxT*minStep
+                end = (idxT+32)*minStep
+                tempo = 60 / minStep / 4
+                midi_file = self.raw_midi_set[midiIdx]
+                midiRetrive = pyd.PrettyMIDI(initial_tempo=tempo)
+                melody = pyd.Instrument(program = pyd.instrument_name_to_program('Violin'))
+                accompany = pyd.Instrument(program = pyd.instrument_name_to_program('Acoustic Grand Piano'))
+                shift = 6 - (batchIdx // self.num_beforeShift)
+                for note in midi_file.instruments[0].notes:
+                    if note.end > start and note.start < end:
+                        note_recon = pyd.Note(velocity = 100, pitch = note.pitch + shift, start = max(note.start, start)-start, end = min(note.end, end)-start)
+                        melody.notes.append(note_recon)
+                for note in midi_file.instruments[1].notes:
+                    if note.end > start and note.start < end:
+                        note_recon = pyd.Note(velocity = 100, pitch = note.pitch + shift, start = max(note.start, start)-start, end = min(note.end, end)-start)
+                        accompany.notes.append(note_recon)
+                midiRetrive.instruments.append(melody)
+                midiRetrive.instruments.append(accompany)
             #print(accompany.notes)
             #midiRetrive.write('test_retrive.mid')
             #batchData = np.load(os.path.join(self.save_root, 'batchData_part0.npy'))
@@ -263,16 +291,42 @@ class accompanySelection(midi_interface_mono):
             #melodyRecon.write('test_recon.mid')
             return midiRetrive
 
+        def tone_shift(self):
+            with open(os.path.join(self.save_root, 'auxilary.txt'), 'rb') as f:
+                raw_midi_set = pickle.load(f)
+                tempo_set = pickle.load(f)
+                minStep_set = pickle.load(f)
+                start_record = pickle.load(f)
+                belonging = pickle.load(f)
+            original_batchData = np.load(os.path.join(self.save_root, 'batchData.npy'))
+            shifted_batchData = np.zeros((original_batchData.shape[0]*12, original_batchData.shape[1], original_batchData.shape[2]))
+            for idx, i in enumerate(tqdm(range(-6, 6, 1))):
+                #print(idx)
+                tmp = original_batchData[:, :, :128]
+                #print(tmp.shape)
+                tmp = np.concatenate((tmp[:, :, i:], tmp[:, :, :i]), axis=-1)
+                tmp = np.concatenate((tmp, original_batchData[:, :, 128:]), axis=-1)
+                (shifted_batchData[original_batchData.shape[0]*idx: original_batchData.shape[0]*(idx+1), :, :]) = tmp
+            np.save(os.path.join(self.save_root, 'batchData_shifted.npy'), shifted_batchData)
+            with open(os.path.join(self.save_root, 'auxilary_shifted.txt'), 'wb') as f:
+                pickle.dump(raw_midi_set, f)
+                pickle.dump(tempo_set, f)
+                pickle.dump(minStep_set, f)
+                pickle.dump(start_record, f)
+                pickle.dump(belonging, f)
+                pickle.dump(len(belonging), f)
+            return len(belonging)
+
 if __name__ == '__main__':
     
     
-    #converter1 = accompanySelection(save_root='/gpfsnyu/scratch/jz4807/musicalion_melody_batch_data/')
+    converter1 = accompanySelection(save_root='/gpfsnyu/scratch/jz4807/musicalion_melody_batch_data/')
     #converter1.load_dataset('/gpfsnyu/home/jz4807/datasets/Musicalion/solo+piano/data2dual_track/')
-    converter1 = accompanySelection(save_root='./data_save_root')
-    converter1.load_dataset('../dule_track_trial')
-    converter1.EC2_VAE_batchData()
-    converter1.loadAuxilary()
-    midiRetrive = converter1.retriveRawMidi(90)
+    #converter1 = accompanySelection(save_root='./data_save_root')
+    #converter1.load_dataset('../dule_track_trial')
+    #converter1.EC2_VAE_batchData()
+    #converter1.loadAuxilary()
+    #midiRetrive = converter1.retriveRawMidi(90)
     #converter2 = midi_interface()
     #batch = converter2.load_single('D:/Download/Program/Musicalion/solo+piano/melody_only/RM-P003.SMF_SYNC-melody.mid')
     #print(batch.shape)
@@ -280,3 +334,15 @@ if __name__ == '__main__':
     converter = midi_interface()
     converter.load_single('D:/Download/Program/Musicalion/solo+piano/data2dual_track/ssccm11.mid')
     #converter.load_single('D:/Download/Program/Musicalion/solo+piano/melody_only/RM-P003.SMF_SYNC-melody.mid')"""
+    
+    #test shift tone
+    #length = converter1.tone_shift()
+    #print(length)
+    #converter1.loadAuxilary('auxilary.txt')
+    #midiRetrive = converter1.retriveRawMidi(90)
+    #midiRetrive.write('90_no_change.mid')
+    converter1.loadAuxilary('auxilary_shifted.txt')
+    midiRetrive = converter1.retriveRawMidi(90)
+    midiRetrive.write('90.mid')
+    midiRetrive = converter1.retriveRawMidi(90+238514)
+    midiRetrive.write('90+'+str(238514)+'.mid')

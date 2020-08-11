@@ -60,6 +60,7 @@ class Chord_Loader:
                     obe_check = j
                     break
         if obe_index == -1 and obe_check == -1:
+            #print(name)
             return None
         else:
             re = obe_check[0][:]
